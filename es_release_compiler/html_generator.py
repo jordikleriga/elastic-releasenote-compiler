@@ -33,6 +33,7 @@ class HTMLGenerator:
     }
 
     SECTION_ORDER = [
+        SectionType.HIGHLIGHTS,
         SectionType.NEW_FEATURES,
         SectionType.BUG_FIXES,
         SectionType.UPGRADES,

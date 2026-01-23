@@ -59,6 +59,7 @@ class PDFGenerator:
     # Order for consolidated sections (breaking changes at the end)
     # Note: ENHANCEMENTS is not listed - it gets merged into NEW_FEATURES
     SECTION_ORDER = [
+        SectionType.HIGHLIGHTS,
         SectionType.NEW_FEATURES,  # This now includes enhancements
         SectionType.BUG_FIXES,
         SectionType.UPGRADES,
