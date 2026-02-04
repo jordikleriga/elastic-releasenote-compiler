@@ -5,7 +5,7 @@ import re
 import logging
 
 from .base import BaseFetcher
-from ..config import ProductConfig, LEGACY_PATTERNS, LATEST_8X_MINOR
+from ..config import ProductConfig, LEGACY_PATTERNS, LATEST_8X_MINOR, KNOWN_8X_MINORS
 from ..version import Version
 from ..models import ReleaseNote, ReleaseSection
 
@@ -30,38 +30,64 @@ class LegacyFetcher(BaseFetcher):
             self._parser = LegacyParser()
         return self._parser
 
-    def _build_url(self, pattern_key: str, **kwargs) -> str:
-        """Build URL from pattern."""
+    def _build_url(self, pattern_key: str, minor: str = None, **kwargs) -> str:
+        """Build URL from pattern, using specified minor or latest_minor."""
         pattern = LEGACY_PATTERNS[pattern_key]
         return pattern.format(
             base=self.config.legacy_base_url,
-            minor=self.latest_minor,
+            minor=minor or self.latest_minor,
             **kwargs
         )
 
-    def fetch_available_versions(self) -> List[Version]:
-        """Parse the release notes index page to discover versions."""
-        url = self._build_url("release_notes_index")
-        html = self.fetch_page(url)
-        if not html:
-            logger.warning(f"Could not fetch release notes index for {self.config.name}")
-            return []
+    def _discover_all_minors(self) -> List[str]:
+        """Discover all available 8.x minor version doc pages.
 
-        versions = []
-        for match in self.VERSION_LINK_PATTERN.finditer(html):
-            try:
-                version = Version.parse(match.group(1))
-                # Only include 8.x versions
-                if version.major == 8:
-                    versions.append(version)
-            except ValueError:
+        Starts from KNOWN_8X_MINORS and probes for newer ones beyond the last known.
+        """
+        minors = list(KNOWN_8X_MINORS)
+        # Probe for minors beyond the last known (e.g., 8.20, 8.21, ...)
+        last_known_minor = int(KNOWN_8X_MINORS[-1].split(".")[1])
+        for next_minor_num in range(last_known_minor + 1, last_known_minor + 5):
+            probe_minor = f"8.{next_minor_num}"
+            pattern = LEGACY_PATTERNS["release_notes_index"]
+            probe_url = pattern.format(base=self.config.legacy_base_url, minor=probe_minor)
+            html = self.fetch_page(probe_url)
+            if html:
+                logger.info(f"Discovered new minor version docs: {probe_minor}")
+                minors.append(probe_minor)
+            else:
+                break  # Stop probing once we hit a missing page
+        return minors
+
+    def fetch_available_versions(self) -> List[Version]:
+        """Parse release notes index pages from all 8.x minors to discover versions."""
+        all_minors = self._discover_all_minors()
+        versions = set()
+
+        for minor in all_minors:
+            url = self._build_url("release_notes_index", minor=minor)
+            html = self.fetch_page(url)
+            if not html:
+                logger.debug(f"No release notes index found for minor {minor}")
                 continue
 
-        return sorted(set(versions), reverse=True)
+            for match in self.VERSION_LINK_PATTERN.finditer(html):
+                try:
+                    version = Version.parse(match.group(1))
+                    # Only include 8.x versions
+                    if version.major == 8:
+                        versions.add(version)
+                except ValueError:
+                    continue
+
+            logger.info(f"Scanned {minor} index, total versions so far: {len(versions)}")
+
+        return sorted(versions, reverse=True)
 
     def fetch_release_notes(self, version: Version) -> Optional[ReleaseNote]:
         """Fetch individual release notes page."""
-        url = self._build_url("release_notes", version=str(version))
+        # Use the version's own major.minor for the URL path
+        url = self._build_url("release_notes", minor=version.major_minor, version=str(version))
         html = self.fetch_page(url)
         if not html:
             return None
@@ -72,7 +98,7 @@ class LegacyFetcher(BaseFetcher):
 
     def fetch_breaking_changes(self, version: Version) -> Optional[ReleaseSection]:
         """Fetch migration guide for breaking changes."""
-        url = self._build_url("breaking_changes", target_minor=version.major_minor)
+        url = self._build_url("breaking_changes", minor=version.major_minor, target_minor=version.major_minor)
         html = self.fetch_page(url)
         if not html:
             return None

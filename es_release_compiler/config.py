@@ -493,8 +493,10 @@ def print_navigation_tree(colors: Any = None) -> None:
 # Version threshold for doc site transition (9.x uses modern site)
 MODERN_DOCS_MIN_VERSION = Version(9, 0, 0)
 
-# Latest 8.x minor version for stable URL access
-LATEST_8X_MINOR = "8.17"
+# Known 8.x minor versions for doc site URL access
+# The legacy fetcher will also auto-discover newer minors beyond these
+KNOWN_8X_MINORS = ["8.17", "8.18", "8.19"]
+LATEST_8X_MINOR = KNOWN_8X_MINORS[-1]
 
 # URL patterns for legacy (8.x) docs
 LEGACY_PATTERNS = {
